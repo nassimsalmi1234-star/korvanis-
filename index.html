@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Korvanis Incomplete Address Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* Custom Styles */
+    body {
+      background-color: #0C2D48;
+      color: #FFFFFF;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    
+    .custom-scroll::-webkit-scrollbar { width: 4px; }
+    .custom-scroll::-webkit-scrollbar-track { background: #071E30; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #0EA5E9; border-radius: 2px; }
+    
+    .status-pending { background-color: #ef4444; color: white; }
+    .status-contacted { background-color: #f97316; color: white; }
+    .status-received { background-color: #eab308; color: black; }
+    .status-sent { background-color: #22c55e; color: white; }
+    .status-shipped { background-color: #3b82f6; color: white; }
+    .status-cancelled { background-color: #6b7280; color: white; }
+
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="flex flex-col h-screen p-4 md:p-6 space-y-4 overflow-hidden relative">
+  <!-- Login Overlay -->
+  <div id="login-overlay" class="absolute inset-0 z-50 bg-[#0C2D48] flex flex-col items-center justify-center space-y-6">
+    <div class="flex flex-col items-center space-y-2">
+      <h1 class="text-4xl font-black tracking-tighter text-[#0EA5E9]">KORVANIS</h1>
+      <p class="text-xs uppercase tracking-widest text-blue-400 font-semibold">Secure Agent Portal</p>
+    </div>
+    <div class="bg-[#0A243A] p-8 rounded-xl border border-blue-900/50 flex flex-col items-center space-y-4 w-96 shadow-2xl">
+      <p class="text-xs text-blue-300 text-center">Please sign in with your authorized email to access the board.</p>
+      <button id="btn-login" class="w-full bg-[#0EA5E9] py-3 rounded-lg text-white font-bold text-sm shadow-lg shadow-blue-500/20 hover:bg-sky-400 active:scale-95 transition-all flex items-center justify-center gap-3">
+        <i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE
+      </button>
+      <div id="login-error" class="hidden text-xs text-red-400 text-center mt-2 bg-red-950/50 p-2 rounded border border-red-900 w-full"></div>
+    </div>
+  </div>
+
+  <!-- Form & Filters -->
+  <div id="modal-agents" class="hidden fixed inset-0 z-50 bg-[#0C2D48]/90 flex flex-col items-center justify-center p-4">
+    <div class="bg-[#0A243A] p-6 rounded-xl border border-blue-900/50 w-full max-w-md shadow-2xl flex flex-col relative">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-sm font-bold text-[#0EA5E9] flex items-center gap-2"><i data-lucide="users" class="w-4 h-4"></i> MANAGE ACCESS</h2>
+        <button id="btn-close-agents" class="text-blue-400 hover:text-white transition p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      
+      <form id="form-add-user" class="flex gap-2 mb-4">
+        <select id="select-new-role" class="bg-[#0C2D48] text-blue-300 border border-blue-900 rounded p-2 text-xs outline-none">
+          <option value="agents">Agent</option>
+          <option value="admins">Admin</option>
+        </select>
+        <input type="email" id="input-new-user" required placeholder="user@email.com" class="flex-1 bg-[#0C2D48] border border-blue-900 rounded p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-white transition">
+        <button type="submit" class="bg-[#0EA5E9] px-4 py-2 rounded text-white text-xs font-bold hover:bg-sky-400 transition shadow">Add</button>
+      </form>
+
+      <div class="flex-1 overflow-y-auto max-h-60 border border-blue-900/30 rounded bg-[#0C2D48]/50 custom-scroll">
+        <table class="w-full text-left text-xs text-blue-200">
+          <tbody id="users-list" class="divide-y divide-blue-900/20">
+            <!-- Users listed here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="flex-1 flex flex-col space-y-4 overflow-hidden max-w-[1600px] w-full mx-auto">
+    <!-- Header & Controls -->
+    <header class="flex flex-col xl:flex-row items-center justify-between bg-[#071E30] p-4 rounded-xl border border-blue-900/30 shadow-2xl shrink-0 gap-4">
+      <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-6 w-full xl:w-auto text-center md:text-left">
+        <div class="flex flex-col">
+          <h1 class="text-2xl font-black tracking-tighter text-[#0EA5E9]">KORVANIS</h1>
+          <p class="text-[10px] uppercase tracking-widest text-blue-400 font-semibold">Incomplete Address Tracker</p>
+        </div>
+        <div class="h-8 w-px bg-blue-900/50 hidden md:block"></div>
+        <div class="flex items-center space-x-3 bg-black/30 p-1 rounded-lg border border-blue-900/30">
+          <div id="user-info" class="px-3 py-1.5 rounded text-blue-300 text-xs font-bold transition-colors flex items-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i> <span id="user-email-display">Loading...</span>
+          </div>
+          <button id="btn-manage-agents" class="hidden px-4 py-1.5 rounded bg-indigo-600/50 border border-indigo-500/50 text-indigo-200 text-xs font-bold hover:bg-indigo-600/80 transition-colors"><i data-lucide="users" class="w-4 h-4"></i></button>
+          <button id="btn-logout" class="px-4 py-1.5 rounded bg-blue-900/50 border border-blue-800 text-blue-200 text-xs font-bold hover:bg-blue-900/80 transition-colors">LOGOUT</button>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-4 w-full xl:w-auto justify-center xl:justify-end">
+        <!-- Urgencies Counter -->
+        <div id="urgencies-counter-wrap" class="flex items-center space-x-2 border px-4 py-2 rounded-lg border-blue-900/50 bg-blue-950/30">
+          <span id="urgency-pulse" class="flex h-2 w-2 rounded-full bg-blue-500 opacity-50"></span>
+          <span id="urgencies-counter" class="text-blue-400 text-xs font-bold uppercase tracking-tight">0 Urgencies Detected</span>
+        </div>
+
+        <div class="bg-blue-900/20 border border-blue-800 p-2 rounded-lg flex space-x-2 shrink-0">
+          <button id="btn-export" class="text-[10px] text-blue-300 border border-blue-700 px-2 py-1 rounded hover:bg-blue-800/50 transition">JSON Export</button>
+          <button id="btn-import-trigger" class="text-[10px] text-blue-300 border border-blue-700 px-2 py-1 rounded hover:bg-blue-800/50 transition">Import</button>
+          <input type="file" id="file-import" accept=".json" class="hidden" />
+        </div>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-3 md:grid-cols-6 gap-3 shrink-0" id="stats-container">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 overflow-hidden">
+      <!-- Left Panel: Form -->
+      <aside class="md:w-72 bg-[#071E30] p-5 rounded-xl border border-blue-900/30 flex flex-col shrink-0 overflow-y-auto custom-scroll">
+        <h2 class="text-sm font-bold text-blue-400 mb-4 flex items-center">
+          <i data-lucide="plus" class="w-4 h-4 mr-2"></i> ADD NEW ORDER
+        </h2>
+        <form id="add-form" class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-[10px] text-blue-300/70 uppercase font-bold tracking-wider">Customer Name</label>
+            <input type="text" id="input-name" required placeholder="e.g. Petr Novak" class="w-full bg-[#0C2D48] border border-blue-900 rounded p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-white transition">
+          </div>
+          <div class="space-y-1">
+            <label class="text-[10px] text-blue-300/70 uppercase font-bold tracking-wider">Order Number</label>
+            <input type="text" id="input-order" required placeholder="#8821" class="w-full bg-[#0C2D48] border border-blue-900 rounded p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-white transition">
+          </div>
+          <div class="space-y-1" id="form-email-group">
+            <label class="text-[10px] text-blue-300/70 uppercase font-bold tracking-wider">Email Address</label>
+            <input type="email" id="input-email" placeholder="customer@email.cz" class="w-full bg-[#0C2D48] border border-blue-900 rounded p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-white transition">
+          </div>
+          <div class="space-y-1">
+            <label class="text-[10px] text-blue-300/70 uppercase font-bold tracking-wider">Agent Notes</label>
+            <textarea id="input-notes" rows="3" class="w-full bg-[#0C2D48] border border-blue-900 rounded p-2 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-white transition" placeholder="Zip code missing..."></textarea>
+          </div>
+          <button type="submit" class="w-full bg-[#0EA5E9] py-3 rounded-lg text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:bg-sky-400 active:scale-95 transition-all flex items-center justify-center gap-2">
+            SUBMIT ENTRY
+          </button>
+        </form>
+      </aside>
+
+      <!-- Right Panel: Dashboard -->
+      <section class="flex-1 bg-[#071E30] rounded-xl border border-blue-900/30 flex flex-col overflow-hidden relative">
+        <!-- Toolbar -->
+        <div class="p-4 border-b border-blue-900/30 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-3">
+          <h2 class="text-xs font-bold text-blue-400">ACTIVE TRACKING LIST</h2>
+          <div class="flex items-center space-x-2 w-full sm:w-auto">
+            <input type="text" id="search-input" placeholder="Search name or #order..." class="bg-[#0C2D48] border border-blue-900 rounded-full px-4 py-1.5 text-[10px] w-full sm:w-48 outline-none focus:border-blue-500 text-white transition" />
+            <select id="filter-status" class="bg-[#0C2D48] border border-blue-900 rounded px-2 py-1.5 text-[10px] text-blue-300 outline-none focus:border-blue-500 transition">
+              <option value="ALL">Sort: All Statuses</option>
+              <option value="pending">Type: Pending</option>
+              <option value="contacted">Type: Contacted</option>
+              <option value="received">Type: Received</option>
+              <option value="sent">Type: Sent to Agent</option>
+              <option value="shipped">Type: Shipped</option>
+              <option value="cancelled">Type: Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="flex-1 overflow-y-auto custom-scroll relative">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-[#0A243A] sticky top-0 z-10">
+              <tr class="text-[10px] text-blue-300/50 uppercase tracking-widest">
+                <th class="p-4 font-bold border-b border-blue-900/10">Customer / Order</th>
+                <th class="p-4 font-bold border-b border-blue-900/10">Added</th>
+                <th class="p-4 font-bold border-b border-blue-900/10">Status</th>
+                <th class="p-4 font-bold border-b border-blue-900/10 w-1/3 min-w-[200px]">Address Management</th>
+                <th class="p-4 font-bold border-b border-blue-900/10 text-right min-w-[140px]">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="text-xs">
+              <!-- Entries populated via JS -->
+            </tbody>
+          </table>
+          
+          <div id="empty-state" class="hidden absolute inset-0 flex flex-col items-center justify-center text-blue-900/50 gap-3">
+            <i data-lucide="inbox" class="w-12 h-12"></i>
+            <p class="font-bold uppercase tracking-widest text-xs">No records found.</p>
+          </div>
+        </div>
+      </section>
+      
+    </main>
+  </div>
+
+  <!-- Audio for new entry -->
+  <audio id="notification-sound" preload="auto">
+    <!-- Using a generic short bell sound from Mixkit -->
+    <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- Firebase Integration & Logic -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js';
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js';
+    import { getFirestore, collection, onSnapshot, getDoc, addDoc, doc, updateDoc, deleteDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js';
+
+    // --- Firebase Configuration ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyBH5MFuGOISMt2L5l76l21EPDEv1agUYKA",
+      authDomain: "gen-lang-client-0535900104.firebaseapp.com",
+      projectId: "gen-lang-client-0535900104",
+      storageBucket: "gen-lang-client-0535900104.firebasestorage.app",
+      messagingSenderId: "996753625219",
+      appId: "1:996753625219:web:bb179781481b163d2c4bb6",
+      firestoreDatabaseId: "ai-studio-438786bb-333f-49cd-b0e2-e17f0d1366cc"
+    };
+
+    // --- App State ---
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    const auth = getAuth(app);
+    let records = {};
+    let currentRole = null; // 'admin' or 'agent'
+    let currentFilter = 'ALL';
+    let searchQuery = '';
+    let isInitialLoad = true;
+    let authUser = null;
+
+    // Allowed Emails - Set your authorized emails here
+    const AUTHORIZED_ADMIN = "nassimsalmi1234@gmail.com";
+    
+    // Anyone else who logs in successfully that isn't the admin will be considered an Agent for this demo.
+    // They must be specifically added in the DB to proceed.
+    let unsubscribeAgents = null;
+    
+    // --- Auth Logic ---
+    const els = {
+      overlay: document.getElementById('login-overlay'),
+      btnLogin: document.getElementById('btn-login'),
+      loginError: document.getElementById('login-error'),
+      form: document.getElementById('add-form'),
+      name: document.getElementById('input-name'),
+      order: document.getElementById('input-order'),
+      email: document.getElementById('input-email'),
+      notes: document.getElementById('input-notes'),
+      tbody: document.getElementById('table-body'),
+      empty: document.getElementById('empty-state'),
+      searchInput: document.getElementById('search-input'),
+      filterStatus: document.getElementById('filter-status'),
+      statsContainer: document.getElementById('stats-container'),
+      urgenciesCounter: document.getElementById('urgencies-counter'),
+      btnExport: document.getElementById('btn-export'),
+      btnImportTrigger: document.getElementById('btn-import-trigger'),
+      fileImport: document.getElementById('file-import'),
+      sound: document.getElementById('notification-sound'),
+      btnLogout: document.getElementById('btn-logout'),
+      userEmailDisplay: document.getElementById('user-email-display'),
+      userInfo: document.getElementById('user-info'),
+      btnManageAgents: document.getElementById('btn-manage-agents'),
+      modalAgents: document.getElementById('modal-agents'),
+      btnCloseAgents: document.getElementById('btn-close-agents'),
+      formAddUser: document.getElementById('form-add-user'),
+      selectNewRole: document.getElementById('select-new-role'),
+      inputNewUser: document.getElementById('input-new-user'),
+      usersList: document.getElementById('users-list')
+    };
+
+    // --- Agents/Admins Logic ---
+    let unsubscribeAdmins = null;
+
+    els.btnManageAgents.addEventListener('click', () => {
+      els.modalAgents.classList.remove('hidden');
+      loadUsers();
+    });
+
+    els.btnCloseAgents.addEventListener('click', () => {
+      els.modalAgents.classList.add('hidden');
+      if (unsubscribeAgents) unsubscribeAgents();
+      if (unsubscribeAdmins) unsubscribeAdmins();
+    });
+
+    els.formAddUser.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = els.inputNewUser.value.trim().toLowerCase();
+      const role = els.selectNewRole.value; // 'agents' or 'admins'
+      if (!email) return;
+      try {
+        await setDoc(doc(db, role, email), { addedAt: serverTimestamp() });
+        els.inputNewUser.value = '';
+      } catch (err) {
+        alert("Error adding user: " + err.message);
+      }
+    });
+
+    window.removeUser = async (collectionName, email) => {
+      if (confirm(`Remove access for ${email}?`)) {
+        try {
+          await deleteDoc(doc(db, collectionName, email));
+        } catch (err) {
+          alert('Error removing user: ' + err.message);
+        }
+      }
+    };
+
+    function loadUsers() {
+      if (unsubscribeAgents) unsubscribeAgents();
+      if (unsubscribeAdmins) unsubscribeAdmins();
+
+      let agentsHtml = '';
+      let adminsHtml = '';
+
+      const renderList = () => {
+        let html = adminsHtml + agentsHtml;
+        if (!html) {
+          html = `<tr><td class="p-4 text-center italic text-blue-400/50">No users authorized yet.</td></tr>`;
+        }
+        els.usersList.innerHTML = html;
+      };
+
+      unsubscribeAgents = onSnapshot(collection(db, 'agents'), (snapshot) => {
+        agentsHtml = '';
+        snapshot.forEach(doc => {
+          agentsHtml += `
+            <tr class="hover:bg-white/[0.02] transition-colors">
+              <td class="p-3">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-indigo-900/40 text-indigo-300 border border-indigo-800/50">Agent</span>
+                  <span class="font-mono">${doc.id}</span>
+                </div>
+              </td>
+              <td class="p-3 text-right">
+                <button onclick="removeUser('agents', '${doc.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button>
+              </td>
+            </tr>
+          `;
+        });
+        renderList();
+      });
+
+      unsubscribeAdmins = onSnapshot(collection(db, 'admins'), (snapshot) => {
+        adminsHtml = '';
+        snapshot.forEach(doc => {
+          adminsHtml += `
+            <tr class="hover:bg-white/[0.02] transition-colors">
+              <td class="p-3">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-[#0EA5E9]/20 text-[#0EA5E9] border border-[#0EA5E9]/50">Admin</span>
+                  <span class="font-mono">${doc.id}</span>
+                </div>
+              </td>
+              <td class="p-3 text-right">
+                <button onclick="removeUser('admins', '${doc.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button>
+              </td>
+            </tr>
+          `;
+        });
+        renderList();
+      });
+    }
+
+    els.btnLogin.addEventListener('click', async () => {
+      const provider = new GoogleAuthProvider();
+      try {
+        els.btnLogin.disabled = true;
+        els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> LOGGING IN...';
+        lucide.createIcons();
+        await signInWithPopup(auth, provider);
+      } catch (err) {
+        console.error("Login failed:", err);
+        els.loginError.textContent = err.message;
+        els.loginError.classList.remove('hidden');
+        els.btnLogin.disabled = false;
+        els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
+        lucide.createIcons();
+      }
+    });
+
+    els.btnLogout.addEventListener('click', () => {
+      signOut(auth);
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        authUser = user;
+        els.userEmailDisplay.textContent = user.email;
+        els.loginError.classList.add('hidden');
+        
+        // Check local overriding super admin first
+        if (user.email === AUTHORIZED_ADMIN) {
+          els.overlay.classList.add('hidden');
+          setRole('admin');
+          els.btnManageAgents.classList.remove('hidden');
+          fetchRecords();
+          return;
+        }
+
+        // Check DB for Admin or Agent role
+        try {
+          els.btnLogin.disabled = true;
+          els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> CHECKING ACCESS...';
+          lucide.createIcons();
+          
+          const adminDoc = await getDoc(doc(db, 'admins', user.email));
+          if (adminDoc.exists()) {
+            els.overlay.classList.add('hidden');
+            setRole('admin');
+            els.btnManageAgents.classList.remove('hidden');
+            fetchRecords();
+            return;
+          }
+
+          const agentDoc = await getDoc(doc(db, 'agents', user.email));
+          if (agentDoc.exists()) {
+            els.overlay.classList.add('hidden');
+            setRole('agent');
+            els.btnManageAgents.classList.add('hidden');
+            fetchRecords();
+            return;
+          }
+          
+          throw new Error("Unauthorized");
+        } catch(e) {
+          await signOut(auth);
+          authUser = null;
+          els.loginError.textContent = "Your email is not authorized to access this board. Please contact the administrator.";
+          els.loginError.classList.remove('hidden');
+          els.btnLogin.disabled = false;
+          els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
+          lucide.createIcons();
+        }
+      } else {
+        authUser = null;
+        els.overlay.classList.remove('hidden');
+        els.btnManageAgents.classList.add('hidden');
+        els.btnLogin.disabled = false;
+        els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
+        els.loginError.classList.add('hidden');
+        lucide.createIcons();
+      }
+    });
+
+    // --- Status Config ---
+    const statuses = {
+      pending: { label: 'Pending', class: 'status-pending', icon: 'clock', next: 'contacted' },
+      contacted: { label: 'Contacted', class: 'status-contacted', icon: 'mail', next: 'received' },
+      received: { label: 'Received', class: 'status-received', icon: 'check-square', next: 'sent' },
+      sent: { label: 'Sent to Agent', class: 'status-sent', icon: 'send', next: 'shipped' },
+      shipped: { label: 'Shipped', class: 'status-shipped', icon: 'package-check', next: null },
+      cancelled: { label: 'Cancelled', class: 'status-cancelled', icon: 'x-circle', next: null }
+    };
+
+    // --- DOM Elements ---
+    // (els is defined above in Auth section)
+
+    // --- Database Operations ---
+    function fetchRecords() {
+      const recordsCol = collection(db, 'records');
+      onSnapshot(recordsCol, (snapshot) => {
+        const data = {};
+        snapshot.forEach(doc => {
+          data[doc.id] = doc.data();
+          // Convert Firestore timestamp to JS number for compatibility
+          if (data[doc.id].timestamp?.toMillis) {
+            data[doc.id].timestamp = data[doc.id].timestamp.toMillis();
+          }
+        });
+        handleDataUpdate(data);
+      }, (error) => {
+        console.error("Firestore onSnapshot error:", error);
+      });
+    }
+
+    function handleDataUpdate(data) {
+      const dbSizePrev = Object.keys(records).length;
+      records = data;
+      const dbSizeNew = Object.keys(records).length;
+      
+      if (!isInitialLoad && dbSizeNew > dbSizePrev && currentRole === 'admin') {
+        try { els.sound.currentTime = 0; els.sound.play().catch(e=>console.log("Audio prevent:", e)); } catch(e){}
+      }
+      isInitialLoad = false;
+      renderTable();
+      renderStats();
+    }
+
+    async function addRecord(record) {
+      const newRecord = {
+        ...record,
+        timestamp: serverTimestamp(),
+        history: [{ status: record.status, time: Date.now(), role: currentRole }]
+      };
+
+      await addDoc(collection(db, 'records'), newRecord);
+    }
+
+    async function updateRecord(id, updates) {
+      await updateDoc(doc(db, 'records', id), updates);
+    }
+
+    async function deleteRecord(id) {
+      if (confirm('Are you sure you want to delete this record forever?')) {
+        await deleteDoc(doc(db, 'records', id));
+      }
+    }
+
+    // --- UI Logic ---
+    els.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = els.form.querySelector('button[type="submit"]');
+      btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Saving...';
+      btn.disabled = true;
+
+      try {
+        await addRecord({
+          name: els.name.value.trim(),
+          order: els.order.value.trim(),
+          email: els.email.value.trim(),
+          notes: els.notes.value.trim(),
+          status: 'pending',
+          address: '',
+          addedBy: currentRole
+        });
+        els.form.reset();
+      } catch (err) {
+        console.error("Error adding", err);
+        alert("Failed to add entry.");
+      } finally {
+        btn.innerHTML = 'SUBMIT ENTRY';
+        btn.disabled = false;
+        lucide.createIcons();
+      }
+    });
+
+    els.searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      renderTable();
+    });
+
+    els.filterStatus.addEventListener('change', (e) => {
+      currentFilter = e.target.value;
+      renderTable();
+    });
+
+    function setRole(role) {
+      currentRole = role;
+      if (role === 'admin') {
+        els.userInfo.className = "px-3 py-1.5 rounded bg-[#0EA5E9] text-white text-xs font-bold transition-colors flex items-center gap-2";
+        els.userEmailDisplay.innerHTML = `<span class="uppercase tracking-widest text-[#071E30]">Admin</span> &bull; ${authUser.email}`;
+        document.getElementById('form-email-group').style.display = 'block';
+      } else {
+        els.userInfo.className = "px-3 py-1.5 rounded bg-blue-900/40 text-blue-300 text-xs font-bold transition-colors flex items-center gap-2 border border-blue-800/50";
+        els.userEmailDisplay.innerHTML = `<span class="uppercase tracking-widest text-blue-400">Agent</span> &bull; ${authUser.email}`;
+        document.getElementById('form-email-group').style.display = 'none';
+      }
+      renderTable();
+    }
+
+    // --- Actions ---
+    window.handleStatusChange = async (id, newStatus) => {
+      const rec = records[id];
+      const history = rec.history || [];
+      history.push({ status: newStatus, time: Date.now(), role: currentRole });
+      await updateRecord(id, { status: newStatus, history });
+    };
+
+    window.handleAddressChange = async (id, value) => {
+      await updateRecord(id, { address: value });
+    };
+
+    window.copyAddress = (id) => {
+      const addr = records[id].address;
+      if (addr) {
+        navigator.clipboard.writeText(addr)
+          .then(() => alert(`Address copied for ${records[id].order}`))
+          .catch(() => alert('Failed to copy.'));
+      }
+    };
+
+    window.deleteRow = (id) => {
+      deleteRecord(id);
+    };
+
+    // --- Rendering ---
+    function renderTable() {
+      const entries = Object.entries(records).map(([id, data]) => ({ id, ...data }));
+      
+      // Sort oldest first
+      entries.sort((a, b) => {
+        const timeA = typeof a.timestamp === 'number' ? a.timestamp : a.history?.[0]?.time || 0;
+        const timeB = typeof b.timestamp === 'number' ? b.timestamp : b.history?.[0]?.time || 0;
+        return timeA - timeB;
+      });
+
+      const filtered = entries.filter(rec => {
+        const matchStatus = currentFilter === 'ALL' || rec.status === currentFilter;
+        const query = searchQuery;
+        const matchSearch = query === '' || 
+          (rec.name && rec.name.toLowerCase().includes(query)) || 
+          (rec.order && rec.order.toLowerCase().includes(query)) ||
+          (rec.email && rec.email.toLowerCase().includes(query));
+        return matchStatus && matchSearch;
+      });
+
+      if (filtered.length === 0) {
+        els.tbody.innerHTML = '';
+        els.empty.classList.remove('hidden');
+        return;
+      } else {
+        els.empty.classList.add('hidden');
+      }
+
+      els.tbody.innerHTML = filtered.map(rec => {
+        const conf = statuses[rec.status] || statuses.pending;
+        const addedTime = rec.history?.[0]?.time || rec.timestamp || Date.now();
+        const diffMs = Date.now() - addedTime;
+        const diffHrs = diffMs / (1000 * 60 * 60);
+
+        let isUrgent = false;
+        let rowAlertClass = '';
+        if (rec.status === 'pending' && diffHrs > 48) {
+          rowAlertClass = 'bg-red-500/10';
+          isUrgent = true;
+        } else if (rec.status === 'contacted' && diffHrs > 120) {
+          rowAlertClass = 'bg-orange-500/10';
+        }
+
+        const isAdmin = currentRole === 'admin';
+        const isAgent = currentRole === 'agent';
+        
+        // Actions
+        let actionsHtml = `<div class="flex flex-col items-end gap-1.5 w-full">`;
+        
+        if (isAdmin) {
+          if (rec.status === 'pending') {
+            if (rec.email) {
+               actionsHtml += `<a href="mailto:${rec.email}?subject=Update on your Korvanis Order ${rec.order}" target="_blank" class="bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 border border-blue-500/50 px-2 py-1 rounded text-[10px] font-bold transition w-full text-center flex items-center justify-center gap-1.5"><i data-lucide="mail" class="w-3 h-3"></i> Send Email</a>`;
+            }
+            actionsHtml += `<button onclick="handleStatusChange('${rec.id}', 'contacted')" class="bg-orange-600 hover:bg-orange-500 px-2 py-1 rounded text-[10px] font-bold text-white transition shadow uppercase w-full">Mark Contacted</button>`;
+          } else if (rec.status === 'contacted') {
+            actionsHtml += `<button onclick="handleStatusChange('${rec.id}', 'received')" class="bg-yellow-500 hover:bg-yellow-400 text-black px-2 py-1 rounded text-[10px] font-bold transition shadow uppercase w-full">Address Received</button>`;
+          } else if (rec.status === 'received') {
+            actionsHtml += `<button onclick="handleStatusChange('${rec.id}', 'sent')" class="bg-green-600 hover:bg-green-500 px-2 py-1 rounded text-[10px] font-bold text-white transition shadow uppercase w-full">Mark Sent to Agent</button>`;
+          }
+
+          if (!['cancelled', 'shipped'].includes(rec.status)) {
+            actionsHtml += `<button onclick="handleStatusChange('${rec.id}', 'cancelled')" class="text-[10px] text-gray-400 hover:text-gray-200 transition mt-1 uppercase text-right w-full">Cancel Order</button>`;
+          }
+          actionsHtml += `<button onclick="deleteRow('${rec.id}')" class="text-[10px] text-red-500 hover:text-red-400 transition mt-1 uppercase text-right w-full">Delete</button>`;
+        } else if (isAgent) {
+          if (rec.status === 'pending' || rec.status === 'contacted' || rec.status === 'received') {
+            actionsHtml += `<span class="text-[10px] text-blue-400/50 italic py-1">Awaiting Admin</span>`;
+          } else if (rec.status === 'sent') {
+            actionsHtml += `<button onclick="handleStatusChange('${rec.id}', 'shipped')" class="bg-blue-600 hover:bg-blue-500 px-2 py-1 rounded text-[10px] font-bold text-white transition uppercase shadow w-full">Mark Shipped</button>`;
+          }
+        }
+        actionsHtml += `</div>`;
+
+        // Address
+        let addressHtml = '';
+        if (isAdmin) {
+          if (rec.status !== 'shipped' && rec.status !== 'cancelled') {
+            addressHtml = `
+              <div class="flex flex-col space-y-1 w-full relative group">
+                <textarea 
+                  onblur="handleAddressChange('${rec.id}', this.value)"
+                  class="w-full bg-black/30 border border-blue-900 rounded p-2 text-xs text-white focus:outline-none focus:border-blue-500 transition min-h-[66px] resize-y placeholder-blue-300/30" 
+                  placeholder="Paste complete address here...">${(rec.address || '').replace(/"/g, '&quot;')}</textarea>
+                <div class="flex justify-start">
+                  <button onclick="copyAddress('${rec.id}')" class="flex items-center justify-center gap-1.5 bg-[#0C2D48] hover:bg-blue-900/80 border border-blue-900/50 px-2 py-1 rounded text-[10px] text-blue-300 transition w-auto">
+                    <i data-lucide="copy" class="w-3 h-3"></i> Copy to WhatsApp
+                  </button>
+                </div>
+              </div>
+            `;
+          } else {
+             addressHtml = `<p class="text-xs text-blue-300 whitespace-pre-wrap">${(rec.address || '').replace(/"/g, '&quot;') || '-'}</p>`;
+          }
+        } else if (isAgent) {
+          addressHtml = `
+            <div class="bg-black/20 border border-transparent rounded p-2 min-h-[66px]">
+              <p class="text-[11px] ${rec.address ? 'text-white' : 'text-blue-300/30 italic'} whitespace-pre-wrap leading-relaxed">${(rec.address || '').replace(/"/g, '&quot;') || "En attente de l'Admin..."}</p>
+            </div>
+          `;
+        }
+        
+        let opacityClass = (rec.status === 'shipped' || rec.status === 'cancelled') ? 'opacity-60' : '';
+
+        return `
+          <tr class="border-b border-blue-900/10 hover:bg-white/[0.02] transition-colors ${rowAlertClass} ${opacityClass}">
+            <td class="p-4 align-top">
+              <div class="font-bold text-white">${rec.name}</div>
+              <div class="text-[10px] text-blue-400 font-mono">${rec.order}</div>
+              ${isAdmin && rec.email ? `<div class="text-[10px] text-blue-300/60 mt-1.5 flex items-center gap-1.5"><i data-lucide="mail" class="w-3 h-3"></i> ${rec.email}</div>` : ''}
+               ${rec.notes ? `<div class="text-[10px] text-blue-300/80 mt-1 max-w-[200px] truncate" title="${rec.notes}">${rec.notes}</div>` : ''}
+            </td>
+            <td class="p-4 text-blue-300/60 align-top">
+              ${Math.floor(diffHrs)}h ago
+              ${isUrgent ? `<br><span class="text-[9px] text-red-500 font-bold uppercase tracking-widest">Urgent</span>` : ''}
+            </td>
+            <td class="p-4 align-top">
+              <span class="px-2 py-1 rounded text-[10px] font-bold ${conf.class} ${rec.status === 'contacted' ? 'status-pulse' : ''}">
+                ${conf.label.toUpperCase()}
+              </span>
+            </td>
+            <td class="p-4 align-top">
+              ${addressHtml}
+            </td>
+            <td class="p-4 text-right align-top">
+              ${actionsHtml}
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function renderStats() {
+      const counts = { pending: 0, contacted: 0, received: 0, sent: 0, shipped: 0, cancelled: 0 };
+      let urgencies = 0;
+      const now = Date.now();
+
+      Object.values(records).forEach(rec => {
+        if (counts[rec.status] !== undefined) {
+          counts[rec.status]++;
+        }
+        
+        const addedTime = rec.history?.[0]?.time || rec.timestamp || now;
+        const diffHrs = (now - addedTime) / (1000 * 60 * 60);
+        if (rec.status === 'pending' && diffHrs > 48) {
+          urgencies++;
+        }
+      });
+
+      const confKeys = ['pending', 'contacted', 'received', 'sent', 'shipped', 'cancelled'];
+      const confColors = {
+        pending: 'border-red-500 text-red-400',
+        contacted: 'border-orange-500 text-orange-400',
+        received: 'border-yellow-500 text-yellow-400',
+        sent: 'border-green-500 text-green-400',
+        shipped: 'border-blue-500 text-blue-400',
+        cancelled: 'border-gray-500 text-gray-400'
+      };
+
+      els.statsContainer.innerHTML = confKeys.map(k => `
+        <div class="bg-[#071E30] p-3 rounded-lg border-b-2 ${confColors[k].split(' ')[0]} shadow-sm">
+          <p class="text-[10px] ${confColors[k].split(' ')[1]} uppercase font-bold">${statuses[k].label}</p>
+          <p class="text-2xl font-light text-white">${String(counts[k]).padStart(2, '0')}</p>
+        </div>
+      `).join('');
+
+      els.urgenciesCounter.innerHTML = `${urgencies} Urgencies Detected`;
+      const wrap = document.getElementById('urgencies-counter-wrap');
+      const pulse = document.getElementById('urgency-pulse');
+      if (urgencies > 0) {
+        wrap.className = 'flex items-center space-x-2 bg-red-950/50 border border-red-500/50 px-4 py-2 rounded-lg';
+        els.urgenciesCounter.className = 'text-red-400 text-xs font-bold uppercase tracking-tight';
+        pulse.className = 'flex h-2 w-2 rounded-full bg-red-500 status-pulse';
+      } else {
+        wrap.className = 'flex items-center space-x-2 border border-blue-900/50 bg-blue-950/30 px-4 py-2 rounded-lg';
+        els.urgenciesCounter.className = 'text-blue-400 text-xs font-bold uppercase tracking-tight';
+        pulse.className = 'flex h-2 w-2 rounded-full bg-blue-500 opacity-50';
+      }
+      lucide.createIcons();
+    }
+
+    // --- Export / Import ---
+    els.btnExport.addEventListener('click', () => {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(records, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href",     dataStr);
+      downloadAnchorNode.setAttribute("download", "korvanis_tracker_backup_" + new Date().toISOString().split('T')[0] + ".json");
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    });
+
+    els.btnImportTrigger.addEventListener('click', () => els.fileImport.click());
+
+    els.fileImport.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const importedData = JSON.parse(event.target.result);
+          if (confirm('Importing will merge records. Conflicts favor the imported file. Proceed?')) {
+            for (const [k, v] of Object.entries(importedData)) {
+              await setDoc(doc(db, 'records', k), v);
+            }
+            alert('Import successful!');
+            els.fileImport.value = '';
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Invalid JSON file.');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // Start
+    lucide.createIcons();
+    
+    // Auto-refresh stats
+    setInterval(() => {
+      renderTable();
+      renderStats();
+    }, 60000);
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Korvanis Incomplete Address Tracker",
+  "description": "Shared real-time dashboard for managing incomplete delivery addresses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
