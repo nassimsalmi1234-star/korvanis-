@@ -38,9 +38,13 @@
       <p class="text-xs uppercase tracking-widest text-blue-400 font-semibold">Secure Agent Portal</p>
     </div>
     <div class="bg-[#0A243A] p-8 rounded-xl border border-blue-900/50 flex flex-col items-center space-y-4 w-96 shadow-2xl">
-      <p class="text-xs text-blue-300 text-center">Please sign in with your authorized email to access the board.</p>
+      <p class="text-xs text-blue-300 text-center">Connecte-toi avec ton email autorisé.</p>
+      <input type="email" id="input-login-email" placeholder="email@exemple.com" autocomplete="email"
+        class="w-full bg-[#0C2D48] border border-blue-900 rounded-lg px-4 py-3 text-sm text-white placeholder-blue-400/50 outline-none focus:border-[#0EA5E9] transition">
+      <input type="password" id="input-login-password" placeholder="Mot de passe" autocomplete="current-password"
+        class="w-full bg-[#0C2D48] border border-blue-900 rounded-lg px-4 py-3 text-sm text-white placeholder-blue-400/50 outline-none focus:border-[#0EA5E9] transition">
       <button id="btn-login" class="w-full bg-[#0EA5E9] py-3 rounded-lg text-white font-bold text-sm shadow-lg shadow-blue-500/20 hover:bg-sky-400 active:scale-95 transition-all flex items-center justify-center gap-3">
-        <i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE
+        <i data-lucide="log-in" class="w-5 h-5"></i> SE CONNECTER
       </button>
       <div id="login-error" class="hidden text-xs text-red-400 text-center mt-2 bg-red-950/50 p-2 rounded border border-red-900 w-full"></div>
     </div>
@@ -196,7 +200,7 @@
   <!-- Firebase Integration & Logic -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js';
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-auth.js';
     import { getFirestore, collection, onSnapshot, getDoc, addDoc, doc, updateDoc, deleteDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js';
 
     // --- Firebase Configuration ---
@@ -210,25 +214,21 @@
       firestoreDatabaseId: "ai-studio-438786bb-333f-49cd-b0e2-e17f0d1366cc"
     };
 
-    // --- App State ---
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
     const auth = getAuth(app);
+
+    // --- App State ---
     let records = {};
-    let currentRole = null; // 'admin' or 'agent'
+    let currentRole = null;
     let currentFilter = 'ALL';
     let searchQuery = '';
     let isInitialLoad = true;
     let authUser = null;
 
-    // Allowed Emails - Set your authorized emails here
     const AUTHORIZED_ADMIN = "nassimsalmi1234@gmail.com";
-    
-    // Anyone else who logs in successfully that isn't the admin will be considered an Agent for this demo.
-    // They must be specifically added in the DB to proceed.
-    let unsubscribeAgents = null;
-    
-    // --- Auth Logic ---
+
+    // --- DOM Elements ---
     const els = {
       overlay: document.getElementById('login-overlay'),
       btnLogin: document.getElementById('btn-login'),
@@ -261,6 +261,7 @@
     };
 
     // --- Agents/Admins Logic ---
+    let unsubscribeAgents = null;
     let unsubscribeAdmins = null;
 
     els.btnManageAgents.addEventListener('click', () => {
@@ -277,7 +278,7 @@
     els.formAddUser.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = els.inputNewUser.value.trim().toLowerCase();
-      const role = els.selectNewRole.value; // 'agents' or 'admins'
+      const role = els.selectNewRole.value;
       if (!email) return;
       try {
         await setDoc(doc(db, role, email), { addedAt: serverTimestamp() });
@@ -300,87 +301,80 @@
     function loadUsers() {
       if (unsubscribeAgents) unsubscribeAgents();
       if (unsubscribeAdmins) unsubscribeAdmins();
-
       let agentsHtml = '';
       let adminsHtml = '';
-
       const renderList = () => {
         let html = adminsHtml + agentsHtml;
-        if (!html) {
-          html = `<tr><td class="p-4 text-center italic text-blue-400/50">No users authorized yet.</td></tr>`;
-        }
+        if (!html) html = `<tr><td class="p-4 text-center italic text-blue-400/50">No users authorized yet.</td></tr>`;
         els.usersList.innerHTML = html;
       };
-
       unsubscribeAgents = onSnapshot(collection(db, 'agents'), (snapshot) => {
         agentsHtml = '';
-        snapshot.forEach(doc => {
-          agentsHtml += `
-            <tr class="hover:bg-white/[0.02] transition-colors">
-              <td class="p-3">
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-indigo-900/40 text-indigo-300 border border-indigo-800/50">Agent</span>
-                  <span class="font-mono">${doc.id}</span>
-                </div>
-              </td>
-              <td class="p-3 text-right">
-                <button onclick="removeUser('agents', '${doc.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button>
-              </td>
-            </tr>
-          `;
+        snapshot.forEach(d => {
+          agentsHtml += `<tr class="hover:bg-white/[0.02] transition-colors">
+            <td class="p-3"><div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-indigo-900/40 text-indigo-300 border border-indigo-800/50">Agent</span>
+              <span class="font-mono">${d.id}</span>
+            </div></td>
+            <td class="p-3 text-right"><button onclick="removeUser('agents', '${d.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button></td>
+          </tr>`;
         });
         renderList();
       });
-
       unsubscribeAdmins = onSnapshot(collection(db, 'admins'), (snapshot) => {
         adminsHtml = '';
-        snapshot.forEach(doc => {
-          adminsHtml += `
-            <tr class="hover:bg-white/[0.02] transition-colors">
-              <td class="p-3">
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-[#0EA5E9]/20 text-[#0EA5E9] border border-[#0EA5E9]/50">Admin</span>
-                  <span class="font-mono">${doc.id}</span>
-                </div>
-              </td>
-              <td class="p-3 text-right">
-                <button onclick="removeUser('admins', '${doc.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button>
-              </td>
-            </tr>
-          `;
+        snapshot.forEach(d => {
+          adminsHtml += `<tr class="hover:bg-white/[0.02] transition-colors">
+            <td class="p-3"><div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-[#0EA5E9]/20 text-[#0EA5E9] border border-[#0EA5E9]/50">Admin</span>
+              <span class="font-mono">${d.id}</span>
+            </div></td>
+            <td class="p-3 text-right"><button onclick="removeUser('admins', '${d.id}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold px-2 py-1 bg-red-900/20 rounded border border-red-900/50 transition">Remove</button></td>
+          </tr>`;
         });
         renderList();
       });
     }
 
+    // --- Auth Logic ---
+    const resetLoginBtn = () => {
+      els.btnLogin.disabled = false;
+      els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SE CONNECTER';
+      lucide.createIcons();
+    };
+
     els.btnLogin.addEventListener('click', async () => {
-      const provider = new GoogleAuthProvider();
+      const email = document.getElementById('input-login-email').value.trim();
+      const password = document.getElementById('input-login-password').value;
+      if (!email || !password) {
+        els.loginError.textContent = "Remplis ton email et mot de passe.";
+        els.loginError.classList.remove('hidden');
+        return;
+      }
       try {
         els.btnLogin.disabled = true;
-        els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> LOGGING IN...';
+        els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> CONNEXION...';
         lucide.createIcons();
-        await signInWithPopup(auth, provider);
+        await signInWithEmailAndPassword(auth, email, password);
       } catch (err) {
         console.error("Login failed:", err);
-        els.loginError.textContent = err.message;
+        const msg = err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password'
+          ? "Email ou mot de passe incorrect."
+          : err.message;
+        els.loginError.textContent = msg;
         els.loginError.classList.remove('hidden');
-        els.btnLogin.disabled = false;
-        els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
-        lucide.createIcons();
+        resetLoginBtn();
       }
     });
 
-    els.btnLogout.addEventListener('click', () => {
-      signOut(auth);
-    });
+    els.btnLogout.addEventListener('click', () => signOut(auth));
 
     onAuthStateChanged(auth, async (user) => {
       if (user) {
         authUser = user;
         els.userEmailDisplay.textContent = user.email;
         els.loginError.classList.add('hidden');
-        
-        // Check local overriding super admin first
+
         if (user.email === AUTHORIZED_ADMIN) {
           els.overlay.classList.add('hidden');
           setRole('admin');
@@ -389,12 +383,11 @@
           return;
         }
 
-        // Check DB for Admin or Agent role
         try {
           els.btnLogin.disabled = true;
-          els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> CHECKING ACCESS...';
+          els.btnLogin.innerHTML = '<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> VÉRIFICATION...';
           lucide.createIcons();
-          
+
           const adminDoc = await getDoc(doc(db, 'admins', user.email));
           if (adminDoc.exists()) {
             els.overlay.classList.add('hidden');
@@ -412,25 +405,21 @@
             fetchRecords();
             return;
           }
-          
+
           throw new Error("Unauthorized");
         } catch(e) {
           await signOut(auth);
           authUser = null;
-          els.loginError.textContent = "Your email is not authorized to access this board. Please contact the administrator.";
+          els.loginError.textContent = "Ton email n'est pas autorisé. Contacte l'administrateur.";
           els.loginError.classList.remove('hidden');
-          els.btnLogin.disabled = false;
-          els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
-          lucide.createIcons();
+          resetLoginBtn();
         }
       } else {
         authUser = null;
         els.overlay.classList.remove('hidden');
         els.btnManageAgents.classList.add('hidden');
-        els.btnLogin.disabled = false;
-        els.btnLogin.innerHTML = '<i data-lucide="log-in" class="w-5 h-5"></i> SIGN IN WITH GOOGLE';
         els.loginError.classList.add('hidden');
-        lucide.createIcons();
+        resetLoginBtn();
       }
     });
 
@@ -444,19 +433,15 @@
       cancelled: { label: 'Cancelled', class: 'status-cancelled', icon: 'x-circle', next: null }
     };
 
-    // --- DOM Elements ---
-    // (els is defined above in Auth section)
-
     // --- Database Operations ---
     function fetchRecords() {
       const recordsCol = collection(db, 'records');
       onSnapshot(recordsCol, (snapshot) => {
         const data = {};
-        snapshot.forEach(doc => {
-          data[doc.id] = doc.data();
-          // Convert Firestore timestamp to JS number for compatibility
-          if (data[doc.id].timestamp?.toMillis) {
-            data[doc.id].timestamp = data[doc.id].timestamp.toMillis();
+        snapshot.forEach(d => {
+          data[d.id] = d.data();
+          if (data[d.id].timestamp?.toMillis) {
+            data[d.id].timestamp = data[d.id].timestamp.toMillis();
           }
         });
         handleDataUpdate(data);
@@ -469,7 +454,7 @@
       const dbSizePrev = Object.keys(records).length;
       records = data;
       const dbSizeNew = Object.keys(records).length;
-      
+
       if (!isInitialLoad && dbSizeNew > dbSizePrev && currentRole === 'admin') {
         try { els.sound.currentTime = 0; els.sound.play().catch(e=>console.log("Audio prevent:", e)); } catch(e){}
       }
@@ -484,7 +469,6 @@
         timestamp: serverTimestamp(),
         history: [{ status: record.status, time: Date.now(), role: currentRole }]
       };
-
       await addDoc(collection(db, 'records'), newRecord);
     }
 
